@@ -1,0 +1,566 @@
+#+TITLE:     Error Handling
+#+AUTHOR:    David Ochsner
+#+EMAIL:     david.ochsner@cudos.ch
+#+DATE:      05.05.2025
+
+#+OPTIONS:   H:2 num:t toc:t \n:nil @:t ::t |:t ^:t -:t f:t *:t <:t
+#+OPTIONS:   TeX:t LaTeX:t skip:nil d:nil todo:t pri:nil tags:not-in-toc
+#+INFOJS_OPT: view:nil toc:nil ltoc:t mouse:underline buttons:0 path:https://orgmode.org/org-info.js
+#+EXPORT_SELECT_TAGS: export
+#+EXPORT_EXCLUDE_TAGS: noexport
+#+HTML_LINK_UP:
+#+HTML_LINK_HOME:
+#+startup: beamer
+#+LaTeX_CLASS: beamer
+#+LaTeX_CLASS_OPTIONS: [small]
+#+LaTeX_HEADER: \setminted{fontsize=\footnotesize}
+#+COLUMNS: %40ITEM %10BEAMER_env(Env) %9BEAMER_envargs(Env Args) %4BEAMER_col(Col) %10BEAMER_extra(Extra)
+
+* Result - Implementation
+
+** Wert aus Dictionary - Keine Recovery
+
+#+begin_src csharp
+  Dictionary<string, string> ServiceEndpoints = ...;
+
+  string GetEndpointFor(string serviceName)
+  {
+      return ServiceEndpoints[name];
+  }
+#+end_src
+
+- gut wenn keine Recovery nötig oder möglich
+
+** Wert aus Dictionary
+
+#+begin_src csharp
+  Dictionary<string, Color> ColorByName = ...;
+
+  Color GetFavouriteColor(string name)
+  {
+      if (ColorByName.TryGetValue(name, out var color))
+      {
+  	return color;
+      }
+      return ???;
+  }
+#+end_src
+
+** Wert aus Dictionary mit null
+
+#+begin_src csharp
+  Dictionary<string, Color> ColorByName = ...;
+
+  Color? GetFavouriteColor(string name)
+  {
+      if (ColorByName.TryGetValue(name, out var color))
+      {
+  	return color;
+      }
+      return null;
+  }
+#+end_src
+
+#+BEAMER: \pause
+
+- ~GetValueOrDefault~?
+- keine Info wieso kein Wert zuück gegeben
+- ~null~: siehe später
+
+** Wert aus Dictionary mit Result
+
+#+begin_src csharp
+  Dictionary<string, Color> ColorByName = ...;
+
+  Result<Color> GetFavouriteColor(string name)
+  {
+      if (FavoriteColors.TryGetValue(name, out var color))
+      {
+  	return Result<Color>.FromOk(color);
+      }
+      return Result<Color>.FromError(new($"No favorite color for {name}"));
+  }
+#+end_src
+
+** Result Implementation
+
+#+begin_src csharp
+  record Error(string Message);
+
+  record Result<T>
+  {
+      private bool isOk; private T? value; private Error? error;
+
+      private Result(bool isOk, T? value, Error? error)
+      {
+          this.isOk = isOk;
+          this.value = value;
+          this.error = error;
+      }
+
+      public static Result<T> FromOk(T value)
+  	=> new(true, value, null);
+      public static Result<T> FromError(Error error)
+  	=> new(false, default, error);
+      public static implicit operator Result<T>(T value)
+  	=> FromOk(value);
+      public static implicit operator Result<T>(Error error)
+  	=> FromError(error);
+    }
+#+end_src
+
+** Wert aus Dictionary - Result
+
+#+begin_src csharp
+  Dictionary<string, Color> ColorByName = ...;
+
+  Result<Color> GetFavouriteColor(string name)
+  {
+      if (FavoriteColors.TryGetValue(name, out var color))
+      {
+  	return color;
+      }
+      return new Error($"No favorite color for {name}");
+  }
+#+end_src
+
+** Result weiter verwenden
+
+#+begin_src csharp
+  Result<Color> GetFavouriteColor(string name) {...}
+
+  void PrintColor(string name)
+  {
+      var color = GetFavouritecolor(name);
+      if (color.IsOk)
+      {
+  	Console.Write($"{name}s favourite color is {color.Value}");
+      }
+      else
+      {
+  	Console.Write(color.Error.Message);
+      }
+  }
+#+end_src
+
+** Result Implementation
+
+#+begin_src csharp
+  record Result<T>
+  {
+      private readonly bool isOk;
+      private readonly T? value;
+      private readonly Error? error;
+
+      public bool IsOk => isOk;
+      public bool IsError => isOk is false;
+
+      public T Value => IsOk ? value! : throw new InvalidOperationException();
+      public Error Error => IsError ? error! : throw new InvalidOperationException();
+  }
+#+end_src
+
+** Result weiter verwenden II
+
+#+begin_src csharp
+  Result<Color> GetFavouriteColor(string name) {...}
+
+  void PrintColor(string name)
+  {
+      var colorResult = GetFavoriteColor(name);
+      if (colorResult.TryGetValue(out var color))
+      {
+  	Console.Write($"Favorite color for {name} is {color}");
+      }
+      else
+      {
+  	Console.Write(colorResult.Error);
+      }
+  }
+#+end_src
+
+** Result weiter verwenden - Chaining[fn:cor]
+
+#+begin_src csharp
+  Result<Color> GetFavouriteColor(string name) {...}
+  Result<Postcard> CreatePostcard(Color background) {...}
+  decimal ComputePostage(Postcard postcard) {...}
+
+  Result<decimal> CostForPerson(string name)
+  {
+      ...
+  }
+#+end_src
+
+#+BEAMER: \pause
+
+[[./assets/cor.png]]
+
+[fn:cor] https://refactoring.guru/design-patterns/chain-of-responsibility
+
+** Result weiter verwenden - Chaining[fn:railway]
+
+#+begin_src csharp
+  Result<Color> GetFavouriteColor(string name) {...}
+  Result<Postcard> CreatePostcard(Color background) {...}
+  decimal ComputePostage(Postcard postcard) {...}
+
+  Result<decimal> CostPerPerson(string name)
+  {
+      ...
+  }
+#+end_src
+
+[[./assets/railway1.png]]
+[[./assets/railway2.png]]
+
+[fn:railway] https://fsharpforfunandprofit.com/posts/recipe-part2/
+
+** Result weiter verwenden - Chaining
+
+#+begin_src csharp
+  Result<Color> GetFavouriteColor(string name) {...}
+  Result<Postcard> CreatePostcard(Color background) {...}
+  decimal ComputePostage(Postcard postcard) {...}
+
+  Result<decimal> CostPerPerson(string name)
+  {
+      var colorResult = GetFavoriteColor(name);
+      if (colorResult.TryGetValue(out var color))
+      {
+  	var postcardResult = CreatePostcard(color);
+  	if (postcardResult.TryGetValue(out var postcard))
+  	{
+  	    return ComputePostage(postcard);
+  	}
+  	return postcardResult.Error;
+      }
+      return colorResult.Error;
+  }
+#+end_src
+
+** Result Implementation - Map & AndThen
+
+#+begin_src csharp
+  record Result<T>
+  {
+      // ...
+      public bool IsOk => isOk;
+      public T Value => IsOk ? value! : throw new Exception();
+      public Error Error => IsError ? error! : throw new Exception();
+      
+      public Result<U> Map<U>(Func<T, U> function)
+      {
+  	return IsOk ? Result<U>.FromOk(function(Value)) : Result<U>.FromError(Error);
+      }
+  }
+#+end_src
+
+#+BEAMER: \pause
+
+[[./assets/railway2.png]]
+
+** Result Implementation - Map & AndThen
+
+#+begin_src csharp
+  record Result<T>
+  {
+      // ...
+      public bool IsOk => isOk;
+      public T Value => IsOk ? value! : throw new Exception();
+      public Error Error => IsError ? error! : throw new Exception();
+      
+      public Result<U> Map<U>(Func<T, U> function)
+      {
+  	return IsOk ? function(Value) : Error;
+      }
+  }
+#+end_src
+
+[[./assets/railway2.png]]
+
+** Result Type - AndThen
+
+#+begin_src csharp
+  record Result<T>
+  {
+      // ...
+      public bool IsOk => isOk;
+      public T Value => IsOk ? value! : throw new Exception();
+      public Error Error => IsError ? error! : throw new Exception();
+      
+      public Result<U> Map<U>(Func<T, U> function)
+      {
+  	return IsOk ? function(Value) : Error;
+      }
+      public Result<U> AndThen<U>(Func<T, Result<U>> function)
+      {
+  	return IsOk ? function(Value) : Error;
+      }
+  }
+#+end_src
+
+#+BEAMER: \pause
+
+[[./assets/railway2.png]]
+
+** Result weiter verwenden - Chaining II
+
+#+begin_src csharp
+  Result<Color> GetFavouriteColor(string name) { }
+  Result<Postcard> CreatePostcard(Color background) { }
+  decimal ComputePostage(Postcard postcard) { }
+
+  Result<decimal> CostPerPerson(string name)
+  {
+      return GetFavouritecolor(name)
+  	.AndThen(CreatePostcard)
+  	.Map(ComputePostage);
+  }
+#+end_src
+
+[[./assets/railway2.png]]
+
+** Mit Exceptions
+
+#+begin_src csharp
+  Color GetFavouriteColor(string name) { }
+  Postcard CreatePostcard(Color background) { }
+  decimal ComputePostage(Postcard postcard) { }
+
+  decimal CostPerPerson(string name)
+  {
+      var color = GetFavoritecolor(name);
+      var postcard = CreatePostcard(color);
+      return ComputePostage(postcard);
+  }
+#+end_src
+
+#+BEAMER: \pause
+
+- Happy Case: Einfacher
+- Was kann fehlschlagen?
+- Welche Exceptions muss ich catchen?
+- Wiederverwendbarkeit?
+  
+* Result - Examples
+
+** Example: Result für Parsing I
+
+#+begin_src csharp
+  record Telegram(Status Status, decimal Cost /* ... */);
+
+  Result<Status> ParseStatus(ref char[] message)
+  {
+      if (message.Count < 2) return new Error("Too short");
+      var s = message.Pop(2);  // (!)
+      if (s == "xy")
+      {
+  	return Status.XY;
+      }
+      else if (/* ... */) {}
+      return new Error("Invalid Status");
+  }
+#+end_src
+
+** Example: Result für Parsing I
+
+#+begin_src csharp
+  record Telegram(Status Status, decimal Cost /* ... */);
+
+  Result<Status> ParseStatus(ref char[] message) { }
+  Result<decimal> ParseCost(ref char[] message) { }
+
+  Result<Telegram> ParseTelegram(char[] message)
+  {
+    var status = ParseStatus(ref message);
+    if (status.IsError)
+    {
+      return status.Error;
+    }
+    var cost = ParseCost(ref message);
+    if (cost.IsError)
+    {
+      return cost.Error;
+    }
+    // ...
+    return new Telegram(status.Value, cost.Value /* ... */);
+  }
+#+end_src
+
+
+** Example: Result für Parsing II[fn:cpp1]
+
+#+begin_src csharp
+  record Telegram(Status Status, decimal Cost /* ... */);
+  record Intermediate(Telegram Telegram, char[] Message);
+      
+  Result<Intermediate> ParseStatus(Intermediate i)
+  {
+      if (i.Message.Count < 2) return new Error("Too short");
+      var s = i.Message.Pop(2);  // (!)
+      if (s == "xy")
+      {
+  	i.Telegram.Status = ...
+  	return i;
+      }
+      else if (/* ... */) {}
+      return new Error("Invalid Status")
+  }
+#+end_src
+
+[fn:cpp1] Original ist C++, mit ein bisschen kreativität auf C# übersetzt
+
+** Example: Result für Parsing II
+
+#+begin_src csharp
+  record Intermediate(Telegram Telegram, char[] Message)
+      
+  Result<Intermediate> ParseStatus(Intermediate i)
+  Result<Intermediate> ParseCost(Intermediate i)
+  // ...
+
+  Result<Telegram> Parse(char[] message)
+  {
+      return Ok(new Intermediate(new Telegram(), message))
+  	.AndThen(ParseStatus)
+  	.AndThen(ParseCost)
+  	// ...
+  	.Map(intermediate => intermediate.Telegram);
+  }
+#+end_src
+
+[[./assets/railway2.png]]
+
+** Example: Result für Kombinierung
+
+#+begin_src csharp
+  async Task<Result<IMachineCommands>> CreateMachineCommands(ISessionClient client, IMachineVariables variables)
+  {
+      var machineNodeId = await client.BrowseForNodeIdAsync(/* */);
+
+      var machineChildrenResult = await machineNodeId.AndThenAsync(client.BrowseAsync);
+      if (machineChildrenResult.IsError)
+      {
+          return new Error("Failed to create machine commands");
+      }
+      var machineChildren = machineChildrenResult.Value;
+
+      var processCommands = (await machineChildren.FindNodeIdByBrowserName("ProcessMethods")
+          .AndThenAsync(processMethodsId => ProcessMethods.Create(client, processMethodsId)))
+          .Map(processMethods => new ProcessCommands(variables, processMethods));
+      if (processCommands.IsError)
+      {
+          return new Error("Failed to create machine commands");
+      }
+      // ...
+
+      return new MachineCommands(processCommands.Value /* ... */);
+  }
+#+end_src
+
+* Diskussion
+** Nullable<T>, null
+
+- =A?.Method()?.Method2() ?? SomeDefault()= kann auch als 'Gleis' angesehen werden
+- =GetValueOrDefault=, =FirstOrDefault=, etc. starten 'Gleis'
+  
+[[./assets/railway2.png]]
+
+#+BEAMER: \pause
+
+- Aber:
+  - Was ist =null=?
+
+#+BEAMER: \pause
+
+    - null reference, nullable reference types, nullable value types, =struct=
+    - \Rightarrow sehr *technisch*, nicht *Business*
+  - Keine info wieso kein Value
+
+#+BEAMER: \pause
+
+#+begin_src csharp
+  static U? AndThen(this T? value, Func<T, U?> f)
+    => value is {} v ? f(v) : null;
+
+  ColorByName.GetValueOrDefault(key).AndThen(CreatePostcard)?.GetPrice() ?? 0;
+#+end_src
+
+** "Typescript für Happy Path, Javascript für Errors"
+
+#+begin_src csharp
+  // throws NotPrintableException
+  Postcard CreatePostcard(Color color) {...}
+
+  Result<Postcard> CreatePostcard(Color color) {...}
+#+end_src
+
+#+BEAMER: \pause
+
+- Dass Fehler auftreten können ist nicht auf den ersten Blick ersichtlich
+  (Compiler!)
+- Exceptions müssen nicht gecatched werden
+  - "by design"
+  - nicht immer wünschenswert
+- "Don't use exceptions for *expected* control flow"
+
+** Result
+
+- Error-Fall folgt dem normalen Control flow (cf. =Exception=)
+#+BEAMER: \pause
+- Zwingt den Consumer den Error-Fall explizit zu handlen
+#+BEAMER: \pause
+- Auch im Error-Fall kann Information kommuniziert werden (cf. =null=)
+#+BEAMER: \pause
+- 'Natürliches' Chaining von operationen
+
+** Not Result
+
+- =void SomethingFallible(T)= \Rightarrow Kein =Result<void>=!
+#+BEAMER: \pause
+- Wenn Diagnostics / Stacktrace gewünscht
+#+BEAMER: \pause
+- Wenn keine Recovery möglich ist
+#+BEAMER: \pause
+
+** Zusammenfassung Result
+
+- Modellierung von "entweder-oder"
+  
+#+BEAMER: \pause
+
+[[./assets/railway2.png]]
+
+** Typen von Fehlern
+
+- Domain (e.g. invalid configuration)
+- Panic (e.g. out of memory)
+- Infrastructure (e.g. auth)
+
+** Typen von Fehlern
+
+- Panic (e.g. out of memory) \Rightarrow =Exception=
+- Infrastructure (e.g. auth) \Rightarrow depends...
+- Domain (e.g. invalid configuration) \Rightarrow =Result=?
+
+** C# Type Unions
+
+Type Unions ('Sum Types', 'Discriminated Unions', 'Tagged Unions') sind
+ein Sprach-Feature um "entweder-oder" in einem Typ auszudrücken.
+
+Wahrscheinlich gibts sie bald in C#: https://github.com/dotnet/csharplang/blob/18a527bcc1f0bdaf542d8b9a189c50068615b439/proposals/TypeUnions.md
+
+Dies würde viel Boilerplate im der Result-Implementation überflüssig machen,
+der grundsatz des Patterns wird aber erhalten.
+
+** Sources/Links
+
+- C# Type Unions: https://github.com/dotnet/csharplang/blob/main/proposals/TypeUnions.md
+- C# Library: OneOf https://github.com/mcintyre321/OneOf
+- F# Blog: https://fsharpforfunandprofit.com/rop/
+
+- Rust: https://doc.rust-lang.org/std/result
+- C++: https://en.cppreference.com/w/cpp/utility/expected
+- Java: https://docs.oracle.com/javase/8/docs/api/java/util/Optional.html
+
