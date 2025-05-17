@@ -2,3 +2,4 @@
 
 Console.WriteLine(examples.CostPerPerson("Alice"));
 Console.WriteLine(examples.CostPerPerson2("Peter"));
+Console.WriteLine(examples.Combine());

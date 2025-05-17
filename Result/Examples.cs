@@ -92,4 +92,22 @@ public class Examples
             .AndThen(CreatePostcard)
             .Map(ComputePostage);
     }
+
+    public record A; public record B; public record C;
+    public record Combined(A A, B B, C C);
+
+    Result<A> MaybeA() => new A();
+    Result<B> MaybeB() => new Error("B");
+    Result<C> MaybeC() => new C();
+
+    public Result<Combined> Combine()
+    {
+        var createCombined = (A a, B b, C c) => new Combined(a, b, c);
+
+        // this only works for stuff things that are already delegates
+        return createCombined.Lifted(MaybeA(), MaybeB(), MaybeC());
+
+        static Combined CreateCombined(A a, B b, C c) => new(a, b, c);
+        return ApplicativeOperations.Lifted(CreateCombined, MaybeA(), MaybeB(), MaybeC());
+    }
 }
